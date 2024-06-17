@@ -25,6 +25,7 @@ def login(username, password, user_data):
 def create_user(username, password, user_data):
     user_data[username] = password
     save_user_data("C:/Users/Бобырев Роман/Desktop/data.conf", user_data)
+    messagebox.showinfo("Регистрация", "Пользователь успешно создан")
 
 # Функция для отображения видео с веб-камеры
 def show_camera():
@@ -47,11 +48,31 @@ def attempt_login():
     else:
         messagebox.showerror("Ошибка входа", "Неверное имя пользователя или пароль")
 
-# Функция для регистрации пользователя
-def register():
+
+def open_create_user_window():
     user_data = load_user_data('C:/Users/Бобырев Роман/Desktop/data.conf')
-    create_user(entry_username.get(), entry_password.get(), user_data)
-    messagebox.showinfo("Регистрация", "Пользователь успешно создан")
+    
+
+    # Создание нового окна для регистрации пользователя
+    register_window = tk.Toplevel(root)
+    register_window.title("Регистрация пользователя")
+
+    # Создание метки и поля ввода для имени пользователя
+    label_new_username = tk.Label(register_window, text="Новое имя пользователя:")
+    label_new_username.pack()
+    entry_new_username = tk.Entry(register_window)
+    entry_new_username.pack()
+
+    # Создание метки и поля ввода для пароля
+    label_new_password = tk.Label(register_window, text="Новый пароль:")
+    label_new_password.pack()
+    entry_new_password = tk.Entry(register_window, show="*")
+    entry_new_password.pack()
+
+    # Создание кнопки для подтверждения регистрации
+    button_confirm_registration = tk.Button(register_window, text="Зарегистрироваться", command=lambda: create_user(entry_new_username.get(), entry_new_password.get(), user_data))
+    button_confirm_registration.pack()
+    
 
 # Создание основного окна
 root = tk.Tk()
