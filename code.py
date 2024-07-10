@@ -1,102 +1,147 @@
-import tkinter as tk
-from tkinter import messagebox
 import cv2
-import pickle
+import numpy as np
 import os
+import json
+import serial
+from PyQt5 import QtWidgets, QtGui, QtCore
 
-filename = "C:/Users/Бобырев Роман/Desktop/data.conf"
-# Функция для загрузки данных пользователей
-def load_user_data(filename):
-    if os.path.exists(filename):
-        with open(filename, 'rb') as file:
-            return pickle.load(file)
-    return {}
+# Путь к файлу с настройками пользователей
+SETTINGS_FILE = "Путь к файлу"
 
-# Функция для сохранения данных пользователей
-def save_user_data(filename, data):
-    with open(filename, 'wb') as file:
-        pickle.dump(data, file)
+# Подключение к Arduino
+ser = serial.Serial('COM3', 9600)  # Убедитесь, что COM-порт и скорость совпадают
 
-# Функция для проверки данных пользователя
-def login(username, password, user_data):
-    return username in user_data and user_data[username] == password
+class MainWindow(QtWidgets.QMainWindow):
+    def __init__(self):
+        super(MainWindow, self).__init__()
+        self.setWindowTitle("Управление гусеничной машиной")
+        self.setGeometry(100, 100, 800, 600)
+        
+        self.login_widget = LoginWidget(self)
+        self.setCentralWidget(self.login_widget)
 
-# Функция для создания нового пользователя
-def create_user(username, password, user_data):
-    user_data[username] = password
-    save_user_data("C:/Users/Бобырев Роман/Desktop/data.conf", user_data)
-    messagebox.showinfo("Регистрация", "Пользователь успешно создан")
+    def start_control(self, username):
+        self.control_widget = ControlWidget(self, username)
+        self.setCentralWidget(self.control_widget)
 
-# Функция для отображения видео с веб-камеры
-def show_camera():
-    cap = cv2.VideoCapture(1)
-    while True:
-        ret, frame = cap.read()
+class LoginWidget(QtWidgets.QWidget):
+    def __init__(self, parent):
+        super(LoginWidget, self).__init__(parent)
+        self.parent = parent
+
+        self.layout = QtWidgets.QVBoxLayout(self)
+
+        self.username_label = QtWidgets.QLabel("Имя пользователя:")
+        self.layout.addWidget(self.username_label)
+
+        self.username_input = QtWidgets.QLineEdit()
+        self.layout.addWidget(self.username_input)
+
+        self.login_button = QtWidgets.QPushButton("Войти")
+        self.login_button.clicked.connect(self.login)
+        self.layout.addWidget(self.login_button)
+
+        self.new_user_button = QtWidgets.QPushButton("Создать нового пользователя")
+        self.new_user_button.clicked.connect(self.create_new_user)
+        self.layout.addWidget(self.new_user_button)
+
+    def login(self):
+        username = self.username_input.text()
+        if self.validate_user(username):
+            self.parent.start_control(username)
+        else:
+            QtWidgets.QMessageBox.warning(self, "Ошибка", "Пользователь не найден")
+
+    def create_new_user(self):
+        username = self.username_input.text()
+        if not self.validate_user(username):
+            self.save_user(username)
+            QtWidgets.QMessageBox.information(self, "Успех", "Пользователь создан")
+        else:
+            QtWidgets.QMessageBox.warning(self, "Ошибка", "Пользователь уже существует")
+
+    def validate_user(self, username):
+        if os.path.exists(SETTINGS_FILE):
+            with open(SETTINGS_FILE, "r") as f:
+                users = json.load(f)
+            return username in users
+        return False
+
+    def save_user(self, username):
+        users = {}
+        if os.path.exists(SETTINGS_FILE):
+            with open(SETTINGS_FILE, "r") as f:
+                users = json.load(f)
+        users[username] = {}
+        with open(SETTINGS_FILE, "w") as f:
+            json.dump(users, f)
+
+class ControlWidget(QtWidgets.QWidget):
+    def __init__(self, parent, username):
+        super(ControlWidget, self).__init__(parent)
+        self.parent = parent
+        self.username = username
+
+        self.layout = QtWidgets.QVBoxLayout(self)
+        self.video_label = QtWidgets.QLabel()
+        self.layout.addWidget(self.video_label)
+
+        self.cap = cv2.VideoCapture(0)
+        self.timer = QtCore.QTimer(self)
+        self.timer.timeout.connect(self.update_frame)
+        self.timer.start(30)
+
+    def update_frame(self):
+        ret, frame = self.cap.read()
         if ret:
-            cv2.imshow('Camera', frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-    cap.release()
-    cv2.destroyAllWindows()
+            frame = self.process_frame(frame)
+            image = QtGui.QImage(frame, frame.shape[1], frame.shape[0], frame.strides[0], QtGui.QImage.Format_BGR888)
+            self.video_label.setPixmap(QtGui.QPixmap.fromImage(image))
 
-# Функция для авторизации пользователя
-def attempt_login():
-    user_data = load_user_data("C:/Users/Бобырев Роман/Desktop/data.conf")
-    if login(entry_username.get(), entry_password.get(), user_data):
-        messagebox.Message("Вход выполнен успешно")
-        # show_camera()
-    else:
-        messagebox.showerror("Ошибка входа", "Неверное имя пользователя или пароль")
+    def process_frame(self, frame):
+        height, width, _ = frame.shape
+        mid_h = height // 2
+        mid_w = width // 2
 
+        # Это место для интеграции айтрекера, который должен определить координаты взгляда (x, y)
+        gaze_x, gaze_y = self.get_gaze_coordinates()
 
-def open_create_user_window():
-    user_data = load_user_data('C:/Users/Бобырев Роман/Desktop/data.conf')
-    
+        if gaze_x < mid_w / 2:
+            self.move_left()
+        elif gaze_x > 3 * mid_w / 2:
+            self.move_right()
+        elif gaze_y < mid_h / 2:
+            self.move_forward()
+        elif gaze_y > 3 * mid_h / 2:
+            self.move_backward()
 
-    # Создание нового окна для регистрации пользователя
-    register_window = tk.Toplevel(root)
-    register_window.title("Регистрация пользователя")
+        return frame
 
-    # Создание метки и поля ввода для имени пользователя
-    label_new_username = tk.Label(register_window, text="Новое имя пользователя:")
-    label_new_username.pack()
-    entry_new_username = tk.Entry(register_window)
-    entry_new_username.pack()
+    def get_gaze_coordinates(self):
+        # Возвращаем фиктивные координаты для примера
+        return 400, 300
 
-    # Создание метки и поля ввода для пароля
-    label_new_password = tk.Label(register_window, text="Новый пароль:")
-    label_new_password.pack()
-    entry_new_password = tk.Entry(register_window, show="*")
-    entry_new_password.pack()
+    def move_forward(self):
+        # Команда для движения вперед
+        ser.write(b'F')
 
-    # Создание кнопки для подтверждения регистрации
-    button_confirm_registration = tk.Button(register_window, text="Зарегистрироваться", command=lambda: create_user(entry_new_username.get(), entry_new_password.get(), user_data))
-    button_confirm_registration.pack()
-    
+    def move_backward(self):
+        # Команда для движения назад
+        ser.write(b'B')
 
-# Создание основного окна
-root = tk.Tk()
-root.title("Окно авторизации")
-root.geometry("600x450")  # Установка размеров окна
+    def move_left(self):
+        # Команда для поворота налево
+        ser.write(b'L')
 
-# Создание метки и поля ввода для имени пользователя
-label_username = tk.Label(root, text="Имя пользователя:")
-label_username.pack()
-entry_username = tk.Entry(root)
-entry_username.pack()
+    def move_right(self):
+        # Команда для поворота направо
+        ser.write(b'R')
 
-# Создание метки и поля ввода для пароля
-label_password = tk.Label(root, text="Пароль:")
-label_password.pack()
-entry_password = tk.Entry(root, show="*")
-entry_password.pack()
+    def stop_motors(self):
+        # Команда для остановки моторов
+        ser.write(b'S')
 
-# Создание кнопки для входа
-button_login = tk.Button(root, text="Войти", command=attempt_login)
-button_login.pack()
-
-# Создание кнопки, которая откроет окно создания нового пользователя
-button_open_create_user_window = tk.Button(root, text="Создать нового пользователя", command=open_create_user_window)
-button_open_create_user_window.pack()
-
-root.mainloop()
+app = QtWidgets.QApplication([])
+window = MainWindow()
+window.show()
+app.exec_()
