@@ -9,12 +9,12 @@ from PyQt5 import QtWidgets, QtGui, QtCore
 SETTINGS_FILE = "Путь к файлу"
 
 # Подключение к Arduino
-ser = serial.Serial('COM3', 9600)  # Убедитесь, что COM-порт и скорость совпадают
+ser = serial.Serial('COM3', 9600)  # Нужно убедиться, что COM-порт и скорость совпадают с подключением Arduino
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
-        self.setWindowTitle("Управление гусеничной машиной")
+        self.setWindowTitle("Управление электроколяской")
         self.setGeometry(100, 100, 800, 600)
         
         self.login_widget = LoginWidget(self)
